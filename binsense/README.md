@@ -1,7 +1,12 @@
 # ♻️ BinSense — Predictive & Dynamic Smart Waste Management
 
-> **Competition Prototype**  
-> A road-network-based multi-vehicle route optimization and predictive waste collection operations platform.
+[![Live App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://binsense.streamlit.app/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+[![OR-Tools](https://img.shields.io/badge/Optimization-Google%20OR--Tools-orange)](https://developers.google.com/optimization)
+
+> **🚀 Live Operations Center:** **[https://binsense.streamlit.app/](https://binsense.streamlit.app/)**  
+> **Competition Prototype** — A road-network-based multi-vehicle route optimization and predictive waste collection operations platform.
 
 ---
 
@@ -57,8 +62,8 @@ Simulated Bin Sensors (IoT)
 
 ### 1. Clone & Setup
 ```bash
-git clone https://github.com/megatron-71/BinSense-Predictive-Dynamic-Smart-Waste-Management.git
-cd BinSense-Predictive-Dynamic-Smart-Waste-Management
+git clone https://github.com/megatron-71/Binsense.git
+cd Binsense
 ```
 
 ### 2. Create & Activate Virtual Environment
