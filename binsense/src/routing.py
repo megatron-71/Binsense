@@ -96,8 +96,10 @@ def solve_routes(
     n = len(distance_matrix)
 
     # Validate inputs
-    assert len(demands) == n, f"Demands length {len(demands)} != matrix size {n}"
-    assert demands[depot_index] == 0, "Depot demand must be 0"
+    if len(demands) != n:
+        raise ValueError(f"Demands length {len(demands)} != matrix size {n}")
+    if demands[depot_index] != 0:
+        raise ValueError("Depot demand must be 0")
 
     # Create the routing index manager
     manager = pywrapcp.RoutingIndexManager(n, num_vehicles, depot_index)
@@ -165,17 +167,21 @@ def solve_routes(
         }
 
     # Extract solution
-        # Extract solution
     raw_status = routing.status()
 
-    if raw_status == 7:
-        status = "OPTIMAL"
-    elif raw_status == 1:
-        status = "FEASIBLE"
-    elif raw_status == 2:
-        status = "PARTIAL_SUCCESS"
-    else:
-        status = f"STATUS_{raw_status}"
+    # OR-Tools RoutingModel status codes:
+    #   0 = ROUTING_NOT_SOLVED
+    #   1 = ROUTING_SUCCESS (feasible solution found)
+    #   2 = ROUTING_PARTIAL_SUCCESS_LOCAL_OPTIMUM_NOT_REACHED
+    #   3 = ROUTING_FAIL
+    #   4 = ROUTING_FAIL_TIMEOUT
+    #   5 = ROUTING_INVALID
+    #   6 = ROUTING_INFEASIBLE
+    _STATUS_MAP = {
+        1: "FEASIBLE",
+        2: "PARTIAL_SUCCESS",
+    }
+    status = _STATUS_MAP.get(raw_status, f"STATUS_{raw_status}")
 
     routes = []
     total_distance = 0

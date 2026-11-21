@@ -99,8 +99,6 @@ def generate_bins(
 
     rng = np.random.default_rng(seed)
 
-    random.seed(seed)
-
     if G is None:
         G = _load_road_graph()
 

@@ -559,7 +559,7 @@ history_df = st.session_state.history_df
 # 3. Core Reactive Data Pipeline
 # ─────────────────────────────────────────────────────────────
 
-def run_pipeline(horizon=PREDICTION_HORIZON_HOURS, min_tier=SELECTION_MIN_TIER):
+def run_pipeline(horizon=PREDICTION_HORIZON_HOURS, min_tier=SELECTION_MIN_TIER, capacity_buffer=FLEET_CAPACITY_BUFFER):
     """Executes prediction and priority scoring."""
     pred_df = predict_all_bins(
         st.session_state.current_state_df,
@@ -572,13 +572,14 @@ def run_pipeline(horizon=PREDICTION_HORIZON_HOURS, min_tier=SELECTION_MIN_TIER):
         min_tier=min_tier,
         include_ids=st.session_state.include_ids,
         exclude_ids=st.session_state.exclude_ids,
-        capacity_buffer=FLEET_CAPACITY_BUFFER,
+        capacity_buffer=capacity_buffer,
     )
     return pred_df, scored_df, selection_res
 
 pred_df, scored_df, selection_res = run_pipeline(
     horizon=st.session_state.get("sel_horizon", PREDICTION_HORIZON_HOURS),
     min_tier=st.session_state.get("sel_min_tier", SELECTION_MIN_TIER),
+    capacity_buffer=st.session_state.get("sel_fleet_buffer", FLEET_CAPACITY_BUFFER),
 )
 selected_df = selection_res["selected"]
 
@@ -782,10 +783,12 @@ with st.sidebar:
             "Fleet Capacity Buffer",
             min_value=70,
             max_value=100,
-            value=int(FLEET_CAPACITY_BUFFER * 100),
+            value=int(st.session_state.get("sel_fleet_buffer", FLEET_CAPACITY_BUFFER) * 100),
             format="%d%%",
             help="Target percentage of theoretical fleet capacity to budget for routes.",
         )
+        # Store normalized value (0.0-1.0) back to session state for pipeline use
+        st.session_state["sel_fleet_buffer"] = fleet_buffer / 100.0
         
     st.markdown("---")
     st.markdown("### Quick Info")
@@ -954,7 +957,9 @@ if st.session_state.current_screen == "Dashboard":
 
     with col_right:
         # Overflow Risk Card
-        high_risk_bins = len(scored_df[scored_df["time_to_overflow_hours"] <= 12])
+        high_risk_bins = len(scored_df[scored_df["time_to_overflow_hours"].apply(
+            lambda x: isinstance(x, (int, float)) and np.isfinite(x) and x <= 12
+        )])
         risk_level = "HIGH" if high_risk_bins >= 5 else ("MODERATE" if high_risk_bins >= 2 else "LOW")
         risk_color = COLORS["danger"] if risk_level == "HIGH" else (COLORS["amber"] if risk_level == "MODERATE" else COLORS["leaf"])
 
@@ -1565,6 +1570,15 @@ elif st.session_state.current_screen == "Fleet Dispatch":
             if len(bin_stops) > 5:
                 stops_str += f" → +{len(bin_stops) - 5} more"
 
+            # Calculate estimated dispatch timing based on route
+            import datetime as _dt
+            _now = _dt.datetime.now()
+            _depart = _now.strftime("%H:%M")
+            # Rough estimate: 3 min per stop + 1 min per km
+            _est_minutes = r['num_stops'] * 3 + int(r.get('distance_km', 0))
+            _return = (_now + _dt.timedelta(minutes=max(15, _est_minutes))).strftime("%H:%M")
+            _curr_stop = min(r['num_stops'], max(1, r['num_stops'] // 3))
+
             st.markdown(
                 f"""
                 <div class="metric-card" style="border-left: 4px solid {color}; margin-bottom: 14px;">
@@ -1579,12 +1593,12 @@ elif st.session_state.current_screen == "Fleet Dispatch":
                         <strong>Route Waypoints:</strong> Depot → {stops_str} → Depot
                     </div>
                     <div style="background: rgba(241,239,230,0.08); border-radius: 6px; height: 8px; overflow: hidden; margin-top: 8px;">
-                        <div style="background: {color}; width: 65%; height: 100%; border-radius: 6px;"></div>
+                        <div style="background: {color}; width: {int(_curr_stop / max(1, r['num_stops']) * 100)}%; height: 100%; border-radius: 6px;"></div>
                     </div>
                     <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #6E7A72; margin-top: 4px;">
-                        <span>Departed 22:00</span>
-                        <span>In Progress: Stop {min(r['num_stops'], 3)} of {r['num_stops']}</span>
-                        <span>Est. Return: 23:30</span>
+                        <span>Departed {_depart}</span>
+                        <span>In Progress: Stop {_curr_stop} of {r['num_stops']}</span>
+                        <span>Est. Return: {_return}</span>
                     </div>
                 </div>
                 """,

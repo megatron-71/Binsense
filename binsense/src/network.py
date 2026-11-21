@@ -104,18 +104,12 @@ def build_distance_matrix(
     #  for routing purposes; the real constraint is distance, not direction)
     G_undirected = G.to_undirected()
 
-    # First, filter out any bins not reachable from depot
-    reachable_nodes = set()
-    for node in all_nodes:
-        try:
-            nx.shortest_path_length(G_undirected, depot_node, node, weight="length")
-            reachable_nodes.add(node)
-        except nx.NetworkXNoPath:
-            pass
+    # First, check reachability via a single BFS from depot (much faster than N Dijkstra calls)
+    reachable_from_depot = set(nx.node_connected_component(G_undirected, depot_node))
 
     # Rebuild node list with only reachable bins
-    filtered_bin_nodes = [nd for nd in bin_nodes if nd in reachable_nodes]
-    filtered_bin_ids = [bin_ids[i] for i, nd in enumerate(bin_nodes) if nd in reachable_nodes]
+    filtered_bin_nodes = [nd for nd in bin_nodes if nd in reachable_from_depot]
+    filtered_bin_ids = [bin_ids[i] for i, nd in enumerate(bin_nodes) if nd in reachable_from_depot]
     filtered_node_to_bin = {nd: node_to_bin[nd] for nd in filtered_bin_nodes if nd in node_to_bin}
 
     if len(filtered_bin_nodes) < len(bin_nodes):
@@ -127,31 +121,42 @@ def build_distance_matrix(
     node_to_bin = filtered_node_to_bin
     n = len(all_nodes)
 
-    # Compute distance matrix (meters) and time matrix (seconds)
+    # Compute distance matrix using single-source Dijkstra per node
+    # (N calls instead of N² — each computes shortest paths to all other nodes)
     distance_matrix = np.zeros((n, n), dtype=np.int64)
     time_matrix = np.zeros((n, n), dtype=np.int64)
 
-    # Use shortest path length on the undirected graph for all pairs
+    # Precompute single-source shortest path lengths for distance
+    dist_cache = {}
+    for i in range(n):
+        try:
+            dist_cache[i] = nx.single_source_dijkstra_path_length(
+                G_undirected, all_nodes[i], weight="length"
+            )
+        except nx.NetworkXError:
+            dist_cache[i] = {}
+
+    # Precompute single-source shortest path lengths for travel time
+    time_cache = {}
+    for i in range(n):
+        try:
+            time_cache[i] = nx.single_source_dijkstra_path_length(
+                G_undirected, all_nodes[i], weight="travel_time"
+            )
+        except (nx.NetworkXError, KeyError, TypeError):
+            time_cache[i] = {}
+
+    # Fill matrices from cached results
     for i in range(n):
         for j in range(n):
             if i == j:
                 continue
-            try:
-                dist = nx.shortest_path_length(
-                    G_undirected, all_nodes[i], all_nodes[j], weight="length"
-                )
-                distance_matrix[i][j] = int(dist * DISTANCE_SCALE_FACTOR)
-            except nx.NetworkXNoPath:
-                # Should not happen after filtering, but safeguard
-                distance_matrix[i][j] = 999999
-
-            try:
-                time_val = nx.shortest_path_length(
-                    G_undirected, all_nodes[i], all_nodes[j], weight="travel_time"
-                )
-                time_matrix[i][j] = int(time_val)
-            except (nx.NetworkXNoPath, nx.NetworkXError, KeyError, TypeError):
-                time_matrix[i][j] = 99999
+            distance_matrix[i][j] = int(
+                dist_cache[i].get(all_nodes[j], 999999) * DISTANCE_SCALE_FACTOR
+            )
+            time_matrix[i][j] = int(
+                time_cache[i].get(all_nodes[j], 99999)
+            )
 
     return {
         "distance_matrix": distance_matrix,
@@ -163,7 +168,7 @@ def build_distance_matrix(
     }
 
 
-def get_route_geometry(G, node_sequence):
+def get_route_geometry(G, node_sequence, G_undirected=None):
     """
     Get the actual road geometry (lat/lon points) for a route.
 
@@ -173,13 +178,16 @@ def get_route_geometry(G, node_sequence):
         Road graph.
     node_sequence : list[int]
         Ordered list of OSM node IDs defining the route.
+    G_undirected : networkx.Graph, optional
+        Pre-computed undirected graph (avoids recomputing).
 
     Returns
     -------
     list[tuple[float, float]]
         List of (latitude, longitude) points along the route.
     """
-    G_undirected = G.to_undirected()
+    if G_undirected is None:
+        G_undirected = G.to_undirected()
     route_coords = []
 
     for i in range(len(node_sequence) - 1):
